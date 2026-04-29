@@ -1,5 +1,5 @@
-# Raw DEAP dataset — proprietary, ~800 MB, not redistributable
-data/raw/
+# DEAP raw data is stored in data/raw/ and IS committed
+# ../DEAP/ external copy — not tracked
 ../DEAP/
 
 # Large feature caches — regenerate with pipeline.run()
@@ -30,9 +30,11 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Large binary files (tracked separately if needed)
-*.dat
+# Large binary files
 *.pkl
+
+# DEAP dataset — tracked in data/raw/ (DO NOT add .dat to other locations)
+# data/raw/*.dat are intentionally committed
 
 # Trained models — keep small checkpoints, ignore bulk
 # data/models/   ← uncomment to ignore all weights too
