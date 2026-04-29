@@ -6,11 +6,9 @@ from pathlib import Path
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).parent
-DATA_DIR = Path(
-    r"C:\Users\psgpe\Downloads\2025-2026_NeuroBarometer Emotions"
-    r"\2025-2026_NeuroBarometer Emotions\DEAP\dataset\data_preprocessed_python"
-)
-CACHE_DIR = ROOT / "results" / "cache"
+DATA_DIR  = ROOT / "data" / "raw"       # s01.dat … s32.dat
+CACHE_DIR = ROOT / "data" / "features"  # cached feature arrays
+MODELS_DIR = ROOT / "data" / "models"   # saved model weights (.pt)
 RESULTS_DIR = ROOT / "results"
 
 # ─── DEAP dataset constants ───────────────────────────────────────────────────
@@ -27,25 +25,23 @@ GSR_CHANNEL = 36                        # EDA / galvanic skin response
 PPG_CHANNEL = 38                        # plethysmograph / BVP
 
 # ─── Feature extraction ───────────────────────────────────────────────────────
-# EEG: Differential Entropy per frequency band
+# EEG: Differential Entropy (DE) + Hjorth Mobility/Complexity per band
 EEG_BANDS = {
-    "delta": (1, 3),
-    "theta": (4, 7),
-    "alpha": (8, 13),
+    "theta": (5,  7),
+    "alpha": (8,  13),
     "beta":  (14, 30),
-    "gamma": (31, 50),
+    "gamma": (31, 45),
 }
-EEG_WINDOW_SEC = 1       # non-overlapping 1-s windows for DE computation
-N_EEG_FEATURES = len(EEG_CHANNELS) * len(EEG_BANDS)   # 32 × 5 = 160
+EEG_WINDOW_SEC = 1       # non-overlapping 1-s windows
+# 32 ch × (4 bands DE + Hjorth_mob + Hjorth_comp) = 192
+N_EEG_FEATURES = len(EEG_CHANNELS) * (len(EEG_BANDS) + 2)
 
-# PPG / HRV
+# PPG / HRV (10) + GSR EDA (8) + FAA + FTA (2)
 N_PPG_FEATURES = 10
+N_GSR_FEATURES = 8        # no DEAP-specific consensus labels (non-transferable)
+N_EXTRA_FEATURES = 2      # FAA, FTA (frontal asymmetry — transferable)
 
-# GSR / EDA
-N_GSR_FEATURES = 8
-N_CONSENSUS_FEATURES = 5   # 2 consensus + 1 position + 2 frontal hemispheric asymmetry
-
-N_FEATURES_TOTAL = N_EEG_FEATURES + N_PPG_FEATURES + N_GSR_FEATURES  # 178
+N_FEATURES_TOTAL = N_EEG_FEATURES + N_PPG_FEATURES + N_GSR_FEATURES + N_EXTRA_FEATURES  # 212
 
 # ─── Labels ───────────────────────────────────────────────────────────────────
 LABEL_THRESHOLD = 5.0    # split scale [1–9] at midpoint → High / Low
