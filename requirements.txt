@@ -1,0 +1,13 @@
+# Core deep learning (CUDA 12.1 build — install with the index URL below)
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+torch>=2.5.1
+torchvision
+torchaudio
+
+# Scientific computing
+numpy>=1.24
+scipy>=1.10
+scikit-learn>=1.3
+pandas>=2.0
+matplotlib>=3.7
+tqdm>=4.65

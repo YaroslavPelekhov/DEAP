@@ -1,0 +1,53 @@
+# Raw DEAP dataset — proprietary, ~800 MB, not redistributable
+data/raw/
+../DEAP/
+
+# Large feature caches — regenerate with pipeline.run()
+data/features/
+results/cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Large binary files (tracked separately if needed)
+*.dat
+*.pkl
+
+# Trained models — keep small checkpoints, ignore bulk
+# data/models/   ← uncomment to ignore all weights too
+
+# Executed notebooks (large outputs embedded)
+*_executed.ipynb
+
+# One-off patch/migration scripts
+patch_notebook*.py
+fix_importance_cell.py
+
+# Temporary report files
+~$*.docx
+results/DEAP_Report*.docx
+
+# Logs
+*.log
+nb_v*_run.log
