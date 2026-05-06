@@ -1,5 +1,5 @@
-# DEAP raw data is stored in data/raw/ and IS committed
-# ../DEAP/ external copy — not tracked
+# DEAP raw data — not tracked (download separately)
+data/raw/
 ../DEAP/
 
 # Large feature caches — regenerate with pipeline.run()
@@ -33,8 +33,8 @@ Thumbs.db
 # Large binary files
 *.pkl
 
-# DEAP dataset — tracked in data/raw/ (DO NOT add .dat to other locations)
-# data/raw/*.dat are intentionally committed
+# Raw data files not tracked
+*.dat
 
 # Trained models — keep small checkpoints, ignore bulk
 # data/models/   ← uncomment to ignore all weights too
