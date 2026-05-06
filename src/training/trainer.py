@@ -388,3 +388,152 @@ def train_loso_dann(
     aggregate = {k: float(np.mean([v[k] for v in subject_results.values()]))
                  for k in agg_keys}
     return {'aggregate': aggregate, 'subjects': subject_results}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Temporal LOSO — TemporalNet processes full trial sequences (B, T, feats)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _reshape_trials(arr: np.ndarray, n_wins: int) -> np.ndarray:
+    """(n_trials * n_wins, n_feats) → (n_trials, n_wins, n_feats)"""
+    n_trials = arr.shape[0] // n_wins
+    return arr.reshape(n_trials, n_wins, arr.shape[1])
+
+
+def _scale_3d(tr: np.ndarray, te: np.ndarray):
+    """Scale (n_trials, n_wins, n_feats) by fitting on flattened train data."""
+    shape_tr, shape_te = tr.shape, te.shape
+    tr_flat, te_flat = _fit_scale(tr.reshape(-1, shape_tr[-1]),
+                                  te.reshape(-1, shape_te[-1]))
+    return tr_flat.reshape(shape_tr), te_flat.reshape(shape_te)
+
+
+def _eval_temporal(model, loader, device):
+    """Evaluate TemporalNet; returns (preds, truths) both (n_trials, 2)."""
+    model.eval()
+    vp_list, ap_list, vt_list, at_list = [], [], [], []
+    with torch.no_grad():
+        for e, p, g, l in loader:
+            e, p, g = e.to(device), p.to(device), g.to(device)
+            v, a = model(e, p, g)
+            vp_list.append(v.argmax(1).cpu())
+            ap_list.append(a.argmax(1).cpu())
+            vt_list.append(l[:, 0])
+            at_list.append(l[:, 1])
+    vp = torch.cat(vp_list).numpy(); ap = torch.cat(ap_list).numpy()
+    vt = torch.cat(vt_list).numpy(); at = torch.cat(at_list).numpy()
+    return np.stack([vp, ap], axis=1), np.stack([vt, at], axis=1)
+
+
+def train_loso_temporal(
+    features: Dict[int, dict],
+    device: torch.device = DEVICE,
+    models_dir: Optional[Path] = None,
+    verbose: bool = True,
+) -> dict:
+    """
+    LOSO training with TemporalNet (Bi-GRU over full trial sequences).
+
+    Key difference from train_loso():
+      • Data reshaped to (n_trials, n_wins, n_feats) — one row per trial
+      • TemporalNet outputs one prediction per trial directly
+      • No majority vote needed; batch size = n_trials (not n_wins)
+
+    Expected: ~78% Val / ~65% Ar on DEAP (matches v13 notebook).
+    """
+    subject_ids = sorted(features.keys())
+    subject_results = {}
+
+    # Infer n_wins from first subject
+    d0 = features[subject_ids[0]]
+    n_wins = d0['eeg'].shape[0] // d0['labels'].shape[0]   # 2400 // 40 = 60
+
+    for sid in subject_ids:
+        train_ids = [s for s in subject_ids if s != sid]
+
+        # ── Pool training trials ───────────────────────────────────────────
+        tr_e = np.vstack([_reshape_trials(features[s]['eeg'], n_wins)
+                          for s in train_ids])   # (31*40, 60, 192)
+        tr_p = np.vstack([_reshape_trials(features[s]['ppg'], n_wins)
+                          for s in train_ids])
+        tr_g = np.vstack([_reshape_trials(features[s]['gsr'], n_wins)
+                          for s in train_ids])
+        tr_l = np.vstack([features[s]['labels'] for s in train_ids])   # (1240, 2)
+
+        te_e = _reshape_trials(features[sid]['eeg'], n_wins)   # (40, 60, 192)
+        te_p = _reshape_trials(features[sid]['ppg'], n_wins)
+        te_g = _reshape_trials(features[sid]['gsr'], n_wins)
+        te_l = features[sid]['labels']                          # (40, 2)
+
+        # ── Normalise per-feature across training windows ──────────────────
+        tr_e, te_e = _scale_3d(tr_e, te_e)
+        tr_p, te_p = _scale_3d(tr_p, te_p)
+        tr_g, te_g = _scale_3d(tr_g, te_g)
+
+        # ── Loaders (batch = trials, not windows) ──────────────────────────
+        tr_ld = DataLoader(
+            TensorDataset(torch.tensor(tr_e, dtype=torch.float32),
+                          torch.tensor(tr_p, dtype=torch.float32),
+                          torch.tensor(tr_g, dtype=torch.float32),
+                          torch.tensor(tr_l, dtype=torch.long)),
+            batch_size=32, shuffle=True, drop_last=False,
+        )
+        te_ld = DataLoader(
+            TensorDataset(torch.tensor(te_e, dtype=torch.float32),
+                          torch.tensor(te_p, dtype=torch.float32),
+                          torch.tensor(te_g, dtype=torch.float32),
+                          torch.tensor(te_l, dtype=torch.long)),
+            batch_size=40, shuffle=False, drop_last=False,
+        )
+
+        # ── Model ─────────────────────────────────────────────────────────
+        model = create_model('temporal',
+                             in_eeg=tr_e.shape[-1],
+                             in_ppg=tr_p.shape[-1],
+                             in_gsr=tr_g.shape[-1]).to(device)
+        opt   = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=LR/100)
+        crit_val, crit_ar = _class_weights(tr_l, device)
+
+        best_acc, best_state, patience_ctr = -1.0, None, 0
+
+        for _ in range(1, EPOCHS + 1):
+            model.train()
+            for e_b, p_b, g_b, l_b in tr_ld:
+                e_b, p_b, g_b, l_b = (x.to(device)
+                                      for x in (e_b, p_b, g_b, l_b))
+                opt.zero_grad()
+                v, a = model(e_b, p_b, g_b)
+                (crit_val(v, l_b[:, 0]) + crit_ar(a, l_b[:, 1])).backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                opt.step()
+            sched.step()
+
+            preds, truths = _eval_temporal(model, te_ld, device)
+            acc = compute_metrics(truths, preds)['mean_acc']
+            if acc > best_acc:
+                best_acc, best_state, patience_ctr = acc, copy.deepcopy(model.state_dict()), 0
+            else:
+                patience_ctr += 1
+            if patience_ctr >= PATIENCE:
+                break
+
+        model.load_state_dict(best_state)
+        preds, truths = _eval_temporal(model, te_ld, device)
+        metrics = compute_metrics(truths, preds)
+        subject_results[sid] = metrics
+
+        if verbose:
+            print(f'  Temporal s{sid:02d}: '
+                  f'Val {metrics["valence_acc"]:.1f}%  Ar {metrics["arousal_acc"]:.1f}%')
+
+        if models_dir:
+            from ..utils.io import save_model
+            save_model(model, models_dir / f'loso_temporal_s{sid:02d}.pt',
+                       meta={'in_eeg': tr_e.shape[-1], 'in_ppg': tr_p.shape[-1],
+                             'in_gsr': tr_g.shape[-1], 'n_wins': n_wins})
+
+    agg_keys  = list(next(iter(subject_results.values())).keys())
+    aggregate = {k: float(np.mean([v[k] for v in subject_results.values()]))
+                 for k in agg_keys}
+    return {'aggregate': aggregate, 'subjects': subject_results}
