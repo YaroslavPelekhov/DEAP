@@ -48,7 +48,13 @@ def create_model(
         from .mmcat import MMCAT
         return MMCAT(**kwargs)
 
-    raise ValueError(f"Unknown model: '{name}'. Choose from: multimodal, temporal, mmcat")
+    if name == 'dann':
+        from .dann import DANNNet
+        return DANNNet(in_eeg=in_eeg, in_ppg=in_ppg, in_gsr=in_gsr, **kwargs)
+
+    raise ValueError(
+        f"Unknown model: '{name}'. Choose from: multimodal, temporal, mmcat, dann"
+    )
 
 
 def count_params(model: nn.Module) -> int:

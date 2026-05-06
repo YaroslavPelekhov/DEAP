@@ -22,6 +22,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from .metrics import compute_metrics, majority_vote, aggregate_subject_results
 from ..models.factory import create_model, count_params
+from ..models.dann import DANNNet, dann_alpha
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -230,4 +231,160 @@ def train_loso(
     agg_keys = list(next(iter(subject_results.values())).keys())
     aggregate = {k: float(np.mean([v[k] for v in subject_results.values()])) for k in agg_keys}
 
+    return {'aggregate': aggregate, 'subjects': subject_results}
+
+
+# ── DANN helpers ───────────────────────────────────────────────────────────────
+
+def _fit_scale(tr: np.ndarray, te: np.ndarray):
+    from sklearn.preprocessing import StandardScaler
+    sc = StandardScaler().fit(tr)
+    return sc.transform(tr), sc.transform(te)
+
+
+def _make_loader_with_subjects(e, p, g, l, s, batch_size, shuffle):
+    """Like _make_loader but includes per-sample subject labels."""
+    from torch.utils.data import TensorDataset
+    ds = TensorDataset(
+        torch.tensor(e, dtype=torch.float32),
+        torch.tensor(p, dtype=torch.float32),
+        torch.tensor(g, dtype=torch.float32),
+        torch.tensor(l, dtype=torch.long),
+        torch.tensor(s, dtype=torch.long),
+    )
+    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, drop_last=False)
+
+
+def train_loso_dann(
+    features: Dict[int, dict],
+    device: torch.device = DEVICE,
+    models_dir: Optional[Path] = None,
+    domain_weight: float = 0.3,
+    verbose: bool = True,
+) -> dict:
+    """
+    Leave-One-Subject-Out with Domain-Adversarial Neural Network adaptation.
+
+    The shared encoder is regularised via gradient reversal to produce
+    subject-invariant features, improving cross-subject generalisation.
+
+    Parameters
+    ----------
+    features      : output of FeaturePipeline.run()
+    domain_weight : weight of subject classification loss (λ).
+                    0 = pure emotion loss (= regular LOSO).
+                    Recommended sweep: [0.1, 0.2, 0.3, 0.5].
+    verbose       : print per-subject results
+
+    Returns
+    -------
+    {'aggregate': {...}, 'subjects': {sid: {...}}}
+    """
+    subject_ids     = sorted(features.keys())
+    subject_results = {}
+
+    for sid in subject_ids:
+        train_ids  = [s for s in subject_ids if s != sid]
+        n_subjects = len(train_ids)
+
+        # ── Pool training data, assign local subject index 0…n-1 ──────────
+        parts = {k: [] for k in ('e', 'p', 'g', 'l', 's')}
+        for local_idx, tsid in enumerate(train_ids):
+            d = features[tsid]
+            n = d['eeg'].shape[0]
+            parts['e'].append(d['eeg'])
+            parts['p'].append(d['ppg'])
+            parts['g'].append(d['gsr'])
+            parts['l'].append(d['labels_win'])
+            parts['s'].append(np.full(n, local_idx, dtype=np.int64))
+
+        tr_e = np.vstack(parts['e']); tr_p = np.vstack(parts['p'])
+        tr_g = np.vstack(parts['g']); tr_l = np.vstack(parts['l'])
+        tr_s = np.concatenate(parts['s'])
+
+        te_e = features[sid]['eeg']; te_p = features[sid]['ppg']
+        te_g = features[sid]['gsr']; te_l = features[sid]['labels_win']
+        te_grp = features[sid]['groups']
+
+        # ── Normalise ──────────────────────────────────────────────────────
+        tr_e, te_e = _fit_scale(tr_e, te_e)
+        tr_p, te_p = _fit_scale(tr_p, te_p)
+        tr_g, te_g = _fit_scale(tr_g, te_g)
+
+        # ── Loaders ───────────────────────────────────────────────────────
+        tr_ld = _make_loader_with_subjects(tr_e, tr_p, tr_g, tr_l, tr_s,
+                                           BATCH_SIZE, shuffle=True)
+        te_ld = _make_loader(te_e, te_p, te_g, te_l, BATCH_SIZE, shuffle=False)
+
+        # ── Model ─────────────────────────────────────────────────────────
+        model = DANNNet(
+            in_eeg=tr_e.shape[1], in_ppg=tr_p.shape[1], in_gsr=tr_g.shape[1],
+            n_subjects=n_subjects,
+        ).to(device)
+
+        opt   = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=LR/100)
+        crit_val, crit_ar = _class_weights(tr_l, device)
+        crit_subj = nn.CrossEntropyLoss()
+
+        total_steps = EPOCHS * len(tr_ld)
+        global_step = 0
+        best_acc, best_state, patience_ctr = -1.0, None, 0
+
+        for _ in range(1, EPOCHS + 1):
+            model.train()
+            for e_b, p_b, g_b, l_b, s_b in tr_ld:
+                e_b, p_b, g_b, l_b, s_b = (x.to(device)
+                                            for x in (e_b, p_b, g_b, l_b, s_b))
+                alpha = dann_alpha(global_step, total_steps)
+                global_step += 1
+
+                opt.zero_grad()
+                val_out, ar_out, subj_out = model(e_b, p_b, g_b, alpha=alpha)
+                loss = (crit_val(val_out, l_b[:, 0])
+                        + crit_ar(ar_out, l_b[:, 1])
+                        + domain_weight * crit_subj(subj_out, s_b))
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                opt.step()
+            sched.step()
+
+            preds, truths = _eval_window(model, te_ld, device)
+            acc = compute_metrics(truths, preds)['mean_acc']
+            if acc > best_acc:
+                best_acc, best_state, patience_ctr = acc, copy.deepcopy(model.state_dict()), 0
+            else:
+                patience_ctr += 1
+            if patience_ctr >= PATIENCE:
+                break
+
+        model.load_state_dict(best_state)
+
+        # ── Majority-vote evaluation ───────────────────────────────────────
+        preds, truths = _eval_window(model, te_ld, device)
+        vp = majority_vote(preds[:, 0],  te_grp)
+        ap = majority_vote(preds[:, 1],  te_grp)
+        vt = majority_vote(truths[:, 0], te_grp)
+        at = majority_vote(truths[:, 1], te_grp)
+        metrics = compute_metrics(
+            np.stack([vt, at], axis=1),
+            np.stack([vp, ap], axis=1),
+        )
+        subject_results[sid] = metrics
+
+        if verbose:
+            print(f'  DANN s{sid:02d}: '
+                  f'Val {metrics["valence_acc"]:.1f}%  Ar {metrics["arousal_acc"]:.1f}%  '
+                  f'(λ={domain_weight}, α_final={dann_alpha(global_step, total_steps):.2f})')
+
+        if models_dir:
+            from ..utils.io import save_model
+            save_model(model, models_dir / f'loso_dann_s{sid:02d}.pt',
+                       meta={'in_eeg': tr_e.shape[1], 'in_ppg': tr_p.shape[1],
+                             'in_gsr': tr_g.shape[1], 'n_subjects': n_subjects,
+                             'domain_weight': domain_weight})
+
+    agg_keys  = list(next(iter(subject_results.values())).keys())
+    aggregate = {k: float(np.mean([v[k] for v in subject_results.values()]))
+                 for k in agg_keys}
     return {'aggregate': aggregate, 'subjects': subject_results}
