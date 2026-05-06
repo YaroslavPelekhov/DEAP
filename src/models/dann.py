@@ -188,7 +188,11 @@ class DANNNet(nn.Module):
         val_out  = self.val_head(h)
         ar_out   = self.ar_head(h)
 
-        if self.training and alpha > 0.0:
+        if self.training:
+            # Always compute domain head in training mode so the caller can
+            # unpack (val, ar, subj) unconditionally.
+            # When alpha=0 (start of training) GRL passes gradients unchanged
+            # — domain loss has no adversarial effect yet, which is intentional.
             h_rev    = grad_reverse(h, alpha)
             subj_out = self.subj_head(h_rev)
             return val_out, ar_out, subj_out

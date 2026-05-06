@@ -375,7 +375,7 @@ def train_loso_dann(
         if verbose:
             print(f'  DANN s{sid:02d}: '
                   f'Val {metrics["valence_acc"]:.1f}%  Ar {metrics["arousal_acc"]:.1f}%  '
-                  f'(λ={domain_weight}, α_final={dann_alpha(global_step, total_steps):.2f})')
+                  f'(lam={domain_weight}, alpha_final={dann_alpha(global_step, total_steps):.2f})')
 
         if models_dir:
             from ..utils.io import save_model
