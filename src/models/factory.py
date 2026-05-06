@@ -52,8 +52,12 @@ def create_model(
         from .dann import DANNNet
         return DANNNet(in_eeg=in_eeg, in_ppg=in_ppg, in_gsr=in_gsr, **kwargs)
 
+    if name == 'temporal_dann':
+        from .temporal_dann import TemporalDANNNet
+        return TemporalDANNNet(in_eeg=in_eeg, in_ppg=in_ppg, in_gsr=in_gsr, **kwargs)
+
     raise ValueError(
-        f"Unknown model: '{name}'. Choose from: multimodal, temporal, mmcat, dann"
+        f"Unknown model: '{name}'. Choose from: multimodal, temporal, mmcat, dann, temporal_dann"
     )
 
 
