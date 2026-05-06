@@ -1,25 +1,38 @@
 """
 GSR (EDA) feature extraction.
 
+Low-level functions (numpy-only)
+─────────────────────────────────
+  extract_gsr_features(gsr, fs)        – 8 EDA features from one trial
+  extract_gsr_subject(trials, ...)     – all trials, optional window repeat
+
+MNE-aware extractor class
+─────────────────────────
+  EDAExtractor(EpochExtractor)         – one feature vector per epoch
+
 Features (8 core — no DEAP-specific consensus labels):
-  0  scl_mean      - mean tonic level
-  1  scl_std       - std tonic level
-  2  eda_mean      - mean raw EDA
-  3  eda_std       - std raw EDA
-  4  scr_n_peaks   - number of SCR peaks
-  5  scr_mean_amp  - mean SCR amplitude
-  6  scr_rise_rate - mean SCR rise rate
-  7  eda_slope     - linear trend slope
+  scl_mean      mean tonic (skin conductance level)
+  scl_std       std tonic level
+  eda_mean      mean raw EDA
+  eda_std       std raw EDA
+  scr_n_peaks   number of SCR peaks
+  scr_mean_amp  mean SCR amplitude
+  scr_rise_rate mean SCR rise rate
+  eda_slope     linear trend slope
 
 Note: DEAP-specific consensus labels (cons_val, cons_ar) are intentionally
 excluded — they are stimulus-specific and do not transfer to new devices/stimuli.
-FAA and FTA are computed in eeg.py as they require EEG frontal channels.
+FAA and FTA are in eeg.py as they require EEG frontal channels.
 """
 from __future__ import annotations
 
 import numpy as np
 from scipy.signal import find_peaks
 from scipy.ndimage import uniform_filter1d
+
+import mne
+
+from .base import EpochExtractor
 
 
 FEATURE_NAMES = [
@@ -31,25 +44,30 @@ FEATURE_NAMES = [
 N_GSR_FEATURES = len(FEATURE_NAMES)
 
 
+# ── Low-level helpers ──────────────────────────────────────────────────────
+
 def extract_gsr_features(gsr: np.ndarray, fs: int = 128) -> np.ndarray:
     """
-    Extract EDA features from a single trial.
+    Extract 8 EDA features from a single trial.
 
-    Args:
-        gsr: (n_samples,) raw EDA signal
-        fs:  sampling frequency
+    Parameters
+    ----------
+    gsr : (n_samples,) raw EDA signal
+    fs  : sampling frequency
 
-    Returns:
-        features: (8,) float32
+    Returns
+    -------
+    features : (8,) float32
     """
-    gsr = gsr.astype(np.float64)
+    gsr   = gsr.astype(np.float64)
     feats = np.zeros(N_GSR_FEATURES, dtype=np.float32)
 
+    # Normalize if wildly scaled
     if gsr.std() > 1e3:
         gsr = (gsr - gsr.mean()) / (gsr.std() + 1e-8)
 
     tonic_win = int(4 * fs)
-    scl = uniform_filter1d(gsr, size=tonic_win)
+    scl    = uniform_filter1d(gsr, size=tonic_win)
     phasic = gsr - scl
 
     min_dist = int(0.5 * fs)
@@ -65,7 +83,7 @@ def extract_gsr_features(gsr: np.ndarray, fs: int = 128) -> np.ndarray:
         rise_rates.append(rise / dt)
     mean_rise = float(np.mean(rise_rates)) if rise_rates else 0.0
 
-    t = np.arange(len(gsr))
+    t     = np.arange(len(gsr))
     slope = float(np.polyfit(t, gsr, 1)[0])
 
     feats[:] = [
@@ -76,10 +94,11 @@ def extract_gsr_features(gsr: np.ndarray, fs: int = 128) -> np.ndarray:
     return feats.astype(np.float32)
 
 
-def extract_gsr_subject(gsr_trials: np.ndarray, n_windows: int | None = None,
-                        fs: int = 128) -> np.ndarray:
+def extract_gsr_subject(gsr_trials: np.ndarray,
+                         n_windows: int | None = None,
+                         fs: int = 128) -> np.ndarray:
     """
-    (n_trials, n_samples) -> (n_trials [* n_windows], 8)
+    (n_trials, n_samples) → (n_trials [* n_windows], 8)
     If n_windows given, repeats each trial's features n_windows times.
     """
     per_trial = np.stack([extract_gsr_features(gsr_trials[i], fs)
@@ -87,3 +106,34 @@ def extract_gsr_subject(gsr_trials: np.ndarray, n_windows: int | None = None,
     if n_windows is None:
         return per_trial
     return np.repeat(per_trial, n_windows, axis=0)
+
+
+# ── MNE-aware extractor ────────────────────────────────────────────────────
+
+class EDAExtractor(EpochExtractor):
+    """
+    Electrodermal Activity (EDA/GSR) features from GSR channel.
+
+    Returns (n_epochs, 8) — one feature vector per epoch.
+    The pipeline repeats this n_wins times to align with EEG windows.
+
+    Parameters
+    ----------
+    gsr_ch : name of GSR channel in the Epochs object (default 'GSR')
+    """
+
+    def __init__(self, gsr_ch: str = 'GSR'):
+        self.gsr_ch = gsr_ch
+
+    @property
+    def feature_names(self):
+        return [f'GSR_{n}' for n in FEATURE_NAMES]
+
+    def transform(self, epochs: mne.Epochs) -> np.ndarray:
+        sfreq = int(epochs.info['sfreq'])
+        try:
+            data = self._get_channel(epochs, self.gsr_ch)  # (n_ep, n_samp)
+        except (ValueError, KeyError):
+            return np.zeros((len(epochs), N_GSR_FEATURES), dtype=np.float32)
+        return np.stack([extract_gsr_features(data[i], sfreq)
+                         for i in range(len(data))]).astype(np.float32)

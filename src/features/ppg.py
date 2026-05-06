@@ -1,11 +1,23 @@
 """
 PPG (BVP) feature extraction — HRV features.
-Moved from peripheral_features.py, unchanged logic.
+
+Low-level functions (numpy-only)
+─────────────────────────────────
+  extract_ppg_features(ppg, fs)        – 10 HRV features from one trial
+  extract_ppg_subject(trials, ...)     – all trials, optional window repeat
+
+MNE-aware extractor class
+─────────────────────────
+  HRVExtractor(EpochExtractor)         – one feature vector per epoch
 """
 from __future__ import annotations
 
 import numpy as np
 from scipy.signal import butter, sosfiltfilt, find_peaks, welch
+
+import mne
+
+from .base import EpochExtractor
 
 
 FEATURE_NAMES = [
@@ -16,13 +28,15 @@ FEATURE_NAMES = [
 N_PPG_FEATURES = len(FEATURE_NAMES)
 
 
+# ── Low-level helpers ──────────────────────────────────────────────────────
+
 def _ppg_sos(fs: int = 128) -> np.ndarray:
     nyq = fs / 2.0
     return butter(3, [0.5 / nyq, 8.0 / nyq], btype='bandpass', output='sos')
 
 
 def extract_ppg_features(ppg: np.ndarray, fs: int = 128) -> np.ndarray:
-    """Extract 10 HRV features from a PPG trial."""
+    """Extract 10 HRV features from a single PPG trial (1-D array)."""
     ppg_f = sosfiltfilt(_ppg_sos(fs), ppg)
     p_min, p_max = ppg_f.min(), ppg_f.max()
     if p_max - p_min > 1e-8:
@@ -57,17 +71,19 @@ def extract_ppg_features(ppg: np.ndarray, fs: int = 128) -> np.ndarray:
         hf_power = float(np.log1p(psd[(freqs >= 0.15) & (freqs < 0.40)].sum()))
         lf_hf    = lf_power / (hf_power + 1e-8)
 
-    amps = ppg_f[peaks]
+    amps    = ppg_f[peaks]
     feats[:] = [mean_hr, sdnn, rmssd, pnn50, lf_power, hf_power, lf_hf,
-                float(amps.mean()), float(amps.std(ddof=1)) if len(amps) > 1 else 0.0,
+                float(amps.mean()),
+                float(amps.std(ddof=1)) if len(amps) > 1 else 0.0,
                 ibi_cv]
     return feats.astype(np.float32)
 
 
-def extract_ppg_subject(ppg_trials: np.ndarray, n_windows: int | None = None,
-                        fs: int = 128) -> np.ndarray:
+def extract_ppg_subject(ppg_trials: np.ndarray,
+                         n_windows: int | None = None,
+                         fs: int = 128) -> np.ndarray:
     """
-    (n_trials, n_samples) -> (n_trials [* n_windows], 10)
+    (n_trials, n_samples) → (n_trials [* n_windows], 10)
     If n_windows given, repeats each trial's features n_windows times.
     """
     per_trial = np.stack([extract_ppg_features(ppg_trials[i], fs)
@@ -75,3 +91,34 @@ def extract_ppg_subject(ppg_trials: np.ndarray, n_windows: int | None = None,
     if n_windows is None:
         return per_trial
     return np.repeat(per_trial, n_windows, axis=0)
+
+
+# ── MNE-aware extractor ────────────────────────────────────────────────────
+
+class HRVExtractor(EpochExtractor):
+    """
+    Heart-Rate Variability features from PPG channel.
+
+    Returns (n_epochs, 10) — one feature vector per epoch.
+    The pipeline repeats this n_wins times to align with EEG windows.
+
+    Parameters
+    ----------
+    ppg_ch : name of PPG channel in the Epochs object (default 'PPG')
+    """
+
+    def __init__(self, ppg_ch: str = 'PPG'):
+        self.ppg_ch = ppg_ch
+
+    @property
+    def feature_names(self):
+        return [f'PPG_{n}' for n in FEATURE_NAMES]
+
+    def transform(self, epochs: mne.Epochs) -> np.ndarray:
+        sfreq = int(epochs.info['sfreq'])
+        try:
+            data = self._get_channel(epochs, self.ppg_ch)  # (n_ep, n_samp)
+        except (ValueError, KeyError):
+            return np.zeros((len(epochs), N_PPG_FEATURES), dtype=np.float32)
+        return np.stack([extract_ppg_features(data[i], sfreq)
+                         for i in range(len(data))]).astype(np.float32)
