@@ -46,6 +46,9 @@ Thumbs.db
 patch_notebook*.py
 fix_importance_cell.py
 
+# Report generation scripts (artifacts, not part of the pipeline)
+scripts/build_report.py
+
 # Temporary report files
 ~$*.docx
 results/DEAP_Report*.docx
