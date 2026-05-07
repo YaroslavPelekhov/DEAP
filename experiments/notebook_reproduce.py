@@ -35,7 +35,7 @@ pipe  = FeaturePipeline(data_dir=DATA_DIR, cache_dir=CACHE_DIR)  # v14 by defaul
 feats = pipe.run(ALL_SIDS)
 
 d0 = feats[1]
-print(f'\nFeature shapes per subject:')
+print('\nFeature shapes per subject:')
 print(f'  EEG: {d0["eeg"].shape}  PPG: {d0["ppg"].shape}  GSR: {d0["gsr"].shape}')
 print(f'  Labels: {d0["labels"].shape}  n_wins: '
       f'{d0["eeg"].shape[0] // d0["labels"].shape[0]}')

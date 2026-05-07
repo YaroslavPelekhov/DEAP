@@ -28,7 +28,7 @@ import torch
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.data.channels import BAROMETER_IN_DEAP, DEAP_BAROMETER_INDICES
+from src.data.channels import BAROMETER_IN_DEAP
 from src.features.eeg import EEGExtractor, DEFAULT_BANDS
 from src.features.ppg import extract_ppg_features
 from src.features.gsr import extract_gsr_features

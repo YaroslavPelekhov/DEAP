@@ -13,9 +13,8 @@ import numpy as np
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
-    DATA_DIR, N_SUBJECTS, N_TRIALS, EEG_CHANNELS,
-    GSR_CHANNEL, PPG_CHANNEL,
-    BASELINE_SAMPLES, LABEL_THRESHOLD, LABEL_NAMES,
+    DATA_DIR, N_SUBJECTS, EEG_CHANNELS,
+    GSR_CHANNEL, PPG_CHANNEL, BASELINE_SAMPLES,
 )
 
 

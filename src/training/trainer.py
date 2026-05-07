@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import numpy as np
 import torch
@@ -21,7 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
 from .metrics import compute_metrics, majority_vote, aggregate_subject_results
-from ..models.factory import create_model, count_params
+from ..models.factory import create_model
 from ..models.dann import DANNNet, dann_alpha
 
 # ── Defaults ─────────────────────────────────────────────────────────────────

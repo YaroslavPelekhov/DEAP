@@ -15,7 +15,6 @@ import torch
 import torch.nn as nn
 from pathlib import Path
 from datetime import datetime
-from typing import Any
 
 
 def save_model(model: nn.Module, path: Path | str, meta: dict | None = None) -> None:

@@ -47,7 +47,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import mne
 
-from .base import BaseExtractor, WindowExtractor, EpochExtractor
+from .base import BaseExtractor, WindowExtractor
 from .eeg import EEGExtractor, DEFAULT_BANDS
 from .ppg import extract_ppg_subject
 from .gsr import extract_gsr_subject
@@ -169,7 +169,6 @@ class MNEFeaturePipeline:
         from .ppg import HRVExtractor
         from .gsr import EDAExtractor
 
-        _EEG_TYPES = (DEHjorthExtractor, DEExtractor, HjorthExtractor)
         _MODALITY_MAP = {
             DEHjorthExtractor: 'eeg',
             DEExtractor:       'eeg',
@@ -180,8 +179,6 @@ class MNEFeaturePipeline:
         }
 
         full = self.transform(epochs)
-        n_epochs = len(epochs)
-        n_wins   = full['groups'].shape[0] // n_epochs
 
         split: dict[str, np.ndarray] = {}
         for ext in self.extractors:

@@ -18,11 +18,10 @@ Architecture:
 """
 from __future__ import annotations
 
-import numpy as np
 import torch
 import torch.nn as nn
 
-from .dann import grad_reverse, dann_alpha   # reuse GRL from dann.py
+from .dann import grad_reverse   # reuse GRL from dann.py
 
 
 class TemporalDANNNet(nn.Module):

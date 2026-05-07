@@ -1,0 +1,23 @@
+[flake8]
+max-line-length = 110
+extend-ignore =
+    # alignment / spacing (cosmetic)
+    E221, E226, E241, E251, E202,
+    # blank lines / bracket indent
+    E302, E124,
+    # imports
+    E401, E402,
+    # single-line statements (common in ML code)
+    E701, E702,
+    # continuation line indent
+    E127,
+    # blank lines
+    E301,
+    # line-break before binary operator
+    W503,
+    # whitespace before ':'
+    E203,
+    # line too long (handled by max-line-length)
+    E501,
+    # ambiguous variable name (l, O, I) — common in math/ML
+    E741,

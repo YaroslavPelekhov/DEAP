@@ -11,7 +11,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import numpy as np
-import torch
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))

@@ -8,10 +8,7 @@ Usage:
 """
 from __future__ import annotations
 
-import torch
 import torch.nn as nn
-from pathlib import Path
-from typing import Optional
 
 
 def create_model(
