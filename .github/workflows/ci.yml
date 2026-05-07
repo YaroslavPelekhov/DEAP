@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint-and-import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies (CPU)
+        run: |
+          pip install --upgrade pip
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy scipy scikit-learn pandas matplotlib tqdm mne==1.12.1
+
+      - name: Check imports
+        run: |
+          python -c "
+          from src.features.eeg import extract_eeg_features
+          from src.features.ppg import extract_ppg_features
+          from src.features.gsr import extract_gsr_features
+          from src.features.pipeline import FeaturePipeline
+          from src.models.temporal import TemporalNet
+          from src.models.multimodal import MultiModalNet
+          from src.training.trainer import train_loso_temporal
+          print('All imports OK')
+          "
+
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          flake8 src/ experiments/ scripts/ config.py \
+            --max-line-length=110 \
+            --ignore=E203,W503,E501 \
+            --count
