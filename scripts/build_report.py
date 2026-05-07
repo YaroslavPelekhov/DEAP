@@ -543,24 +543,169 @@ add_table(doc,
 # ── SECTION 12 ────────────────────────────────────────────────────────────────
 
 spacer(doc, 8)
-heading(doc, "12. Следующие шаги")
+heading(doc, "12. Архитектурный роадмап — статус")
+hr(doc)
+body(doc, (
+    "Ниже приведена оценка текущего состояния по четырём направлениям развития "
+    "проекта. Статус определён на основе содержимого репозитория."
+))
+spacer(doc, 6)
+
+# 12.1 DEAP data from git
+heading(doc, "12.1  Данные DEAP в git-репозитории", level=2)
+add_table(doc,
+    headers=["Пункт", "Статус", "Детали"],
+    rows=[
+        ["Сырые .dat файлы не отслеживаются git", "ВЫПОЛНЕНО",
+         "data/raw/ и *.dat добавлены в .gitignore; commit e7e6cfa"],
+        ["Кеш признаков не в git", "ВЫПОЛНЕНО",
+         "data/features/ в .gitignore"],
+        ["Репозиторий не содержит DEAP dataset", "ВЫПОЛНЕНО",
+         "Данные лежат локально, скачиваются отдельно"],
+    ],
+    col_widths_cm=[5.5, 3.0, 7.5],
+    header_bg="1F5C2E",
+)
+spacer(doc, 4)
+body(doc, (
+    "Трюк для полного удаления уже применён: убран gitignore-паттерн, "
+    "удалены файлы, синхронизировано (e7e6cfa), возвращён gitignore, "
+    "файлы восстановлены локально."
+))
+
+# 12.2 MNE format
+spacer(doc, 6)
+heading(doc, "12.2  Переход на формат MNE", level=2)
+add_table(doc,
+    headers=["Компонент", "Статус", "Файл"],
+    rows=[
+        ["DEAP .dat → mne.Epochs (+ metadata, binary labels, montage)",
+         "РЕАЛИЗОВАНО", "src/data/deap_importer.py"],
+        ["NeuroBarometer → mne.Epochs",
+         "РЕАЛИЗОВАНО", "src/data/barometer_importer.py"],
+        ["BaseExtractor / WindowExtractor / EpochExtractor (принимают mne.Epochs)",
+         "РЕАЛИЗОВАНО", "src/features/base.py"],
+        ["MNEFeaturePipeline (transform / transform_split)",
+         "РЕАЛИЗОВАНО", "src/features/pipeline.py"],
+        ["Валидация MNE-пайплайна (79%+ LOSO)",
+         "PENDING", "MNEFeaturePipeline не прогонялась до конца с v14"],
+        ["Замена FeaturePipeline v14 на MNEFeaturePipeline как основного пайплайна",
+         "PENDING", "Требует интеграции consensus / position в MNE-поток"],
+    ],
+    col_widths_cm=[7.0, 3.0, 6.0],
+    header_bg="1F4E79",
+)
+spacer(doc, 4)
+body(doc, (
+    "Инфраструктура MNE готова. Единый формат данных для DEAP и NeuroBarometer "
+    "обеспечивается через deap_importer / barometer_importer. "
+    "Оба возвращают mne.Epochs с одинаковой структурой каналов и метаданными. "
+    "Следующий шаг — прогнать MNEFeaturePipeline с теми же гиперпараметрами, "
+    "что и FeaturePipeline v14, и сверить точность."
+))
+
+# 12.3 Flexible features
+spacer(doc, 6)
+heading(doc, "12.3  Гибкое извлечение признаков (отвязка от DEAP)", level=2)
+add_table(doc,
+    headers=["Компонент", "Статус", "Детали"],
+    rows=[
+        ["Модульные экстракторы: DEHjorthExtractor, HRVExtractor, EDAExtractor, FAAExtractor",
+         "РЕАЛИЗОВАНО", "src/features/eeg.py, ppg.py, gsr.py"],
+        ["ExtractorFactory с from_config() и preset-бандлами",
+         "РЕАЛИЗОВАНО", "src/features/factory.py"],
+        ["Конфигурация через словарь (имя + параметры)",
+         "РЕАЛИЗОВАНО", "MNEFeaturePipeline.from_config([{'name': 'de_hjorth', ...}])"],
+        ["Каждый экстрактор хранит feature_names, не привязан к числу каналов",
+         "РЕАЛИЗОВАНО", "channel_names задаются при инициализации"],
+        ["Консенсус-метки вынесены в DEAP-специфичный постпроцессинг",
+         "РЕАЛИЗОВАНО", "FeaturePipeline.run() — только для DEAP"],
+        ["Поддержка произвольного числа каналов (19 Barometer vs 32 DEAP)",
+         "РЕАЛИЗОВАНО", "EEGExtractor принимает channel_names, n_ch выводится автоматически"],
+        ["Config-driven выбор каких признаков считать без правки кода",
+         "ЧАСТИЧНО", "from_config работает, но нет YAML/JSON конфига на диске"],
+        ["Полная отвязка FeaturePipeline от .dat формата",
+         "PENDING", "FeaturePipeline v14 всё ещё читает .dat напрямую"],
+    ],
+    col_widths_cm=[7.5, 2.8, 5.7],
+    header_bg="1F4E79",
+)
+
+# 12.4 Models
+spacer(doc, 6)
+heading(doc, "12.4  Модели", level=2)
+add_table(doc,
+    headers=["Модель", "Статус", "Описание"],
+    rows=[
+        ["MultiModalNet",    "РЕАЛИЗОВАНО", "Базовый мультимодальный MLP с отдельными энкодерами"],
+        ["DANNNet",          "РЕАЛИЗОВАНО", "MultiModalNet + GRL на уровне эмбеддинга окна"],
+        ["TemporalNet",      "РЕАЛИЗОВАНО",
+         "Bi-GRU над 59 окнами → trial embedding (128). Лучший результат: 79.84%/67.11% LOSO"],
+        ["TemporalDANNNet",  "РЕАЛИЗОВАНО (NEW)",
+         "TemporalNet + GRL на trial embedding (B,128). "
+         "DANN на правильном уровне: субъект-специфика проявляется на уровне триала"],
+        ["MMCAT",            "РЕАЛИЗОВАНО (NEW)",
+         "MultiModal Cross-Attention Transformer: EEG-токены + периферия через cross-attention. "
+         "Не тестировался с v14 признаками"],
+        ["EEGNet / LSTM",    "PENDING",
+         "Возможные альтернативы для raw-signal обработки (не реализованы)"],
+    ],
+    col_widths_cm=[3.5, 3.5, 9.0],
+    header_bg="1F4E79",
+)
+
+# 12.5 Summary roadmap table
+spacer(doc, 8)
+heading(doc, "12.5  Сводная таблица роадмапа", level=2)
+add_table(doc,
+    headers=["Направление", "Выполнено", "В работе / Pending"],
+    rows=[
+        ["1. Данные DEAP вне git",
+         "Полностью: .gitignore, e7e6cfa",
+         "—"],
+        ["2. MNE как общий формат",
+         "Импортеры + MNEFeaturePipeline + базовые классы",
+         "Валидация точности, замена FeaturePipeline как основного"],
+        ["3. Гибкие признаки",
+         "Модульные экстракторы, фабрика, from_config",
+         "YAML-конфиг на диске; полная отвязка от .dat"],
+        ["4. Модели",
+         "TemporalNet (79.84%), DANN, TemporalDANN, MMCAT",
+         "MMCAT не валидировался на v14; EEGNet для raw-сигнала"],
+    ],
+    col_widths_cm=[4.5, 7.0, 4.5],
+    header_bg="1F4E79",
+)
+
+# ── SECTION 13 ────────────────────────────────────────────────────────────────
+
+spacer(doc, 8)
+heading(doc, "13. Приоритеты следующей итерации")
 hr(doc)
 
 numbered(doc, (
-    "Деплой на устройство NeuroBarometer: перенести MNEFeaturePipeline "
-    "(без consensus — он DEAP-специфичен и не переносится на новые стимулы)"
+    "Запустить MNEFeaturePipeline с v14-эквивалентными параметрами "
+    "(win_sec=2.0, stride=1.0) и сверить LOSO-точность с FeaturePipeline v14 "
+    "— это закроет MNE-миграцию"
 ))
 numbered(doc, (
-    "Тестировать DANN с v14 признаками — консенсус уже частично выполняет роль "
-    "domain alignment, но DANN может дополнительно улучшить LOSO"
+    "Добавить YAML/JSON конфиг для выбора признаков на диске "
+    "(чтобы эксперименты менялись без правки кода)"
 ))
 numbered(doc, (
-    "SD протокол с v14 признаками не запускался — ожидается ~79–80% Val "
-    "по аналогии с ноутбуком"
+    "Протестировать MMCAT с v14 признаками — "
+    "cross-attention между EEG-токенами и периферией может дать прирост"
 ))
 numbered(doc, (
-    "Ablation study: оценить вклад каждого нового признака "
-    "(consensus vs position vs FAA/FTA из features vs resp_rate)"
+    "SD протокол с v14 признаками не запускался — ожидается ~79–80% Val"
+))
+numbered(doc, (
+    "Ablation study: оценить вклад consensus vs position vs FAA/FTA из features vs resp_rate "
+    "(убрать по одному и замерить просадку LOSO)"
+))
+numbered(doc, (
+    "Деплой на устройство NeuroBarometer: использовать MNEFeaturePipeline "
+    "без consensus-меток (они DEAP-специфичны)"
 ))
 
 # ── footer ────────────────────────────────────────────────────────────────────
