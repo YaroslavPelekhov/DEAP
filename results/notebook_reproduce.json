@@ -1,0 +1,236 @@
+{
+  "aggregate": {
+    "valence_acc": 79.84375,
+    "arousal_acc": 67.109375,
+    "valence_f1": 79.7484375,
+    "arousal_f1": 66.5959375,
+    "mean_acc": 73.4765625
+  },
+  "subjects": {
+    "1": {
+      "valence_acc": 70.0,
+      "arousal_acc": 60.0,
+      "valence_f1": 68.75,
+      "arousal_f1": 59.9,
+      "mean_acc": 65.0
+    },
+    "2": {
+      "valence_acc": 82.5,
+      "arousal_acc": 62.5,
+      "valence_f1": 82.49,
+      "arousal_f1": 61.32,
+      "mean_acc": 72.5
+    },
+    "3": {
+      "valence_acc": 87.5,
+      "arousal_acc": 72.5,
+      "valence_f1": 87.43,
+      "arousal_f1": 72.34,
+      "mean_acc": 80.0
+    },
+    "4": {
+      "valence_acc": 87.5,
+      "arousal_acc": 42.5,
+      "valence_f1": 87.43,
+      "arousal_f1": 42.46,
+      "mean_acc": 65.0
+    },
+    "5": {
+      "valence_acc": 80.0,
+      "arousal_acc": 60.0,
+      "valence_f1": 79.8,
+      "arousal_f1": 59.9,
+      "mean_acc": 70.0
+    },
+    "6": {
+      "valence_acc": 70.0,
+      "arousal_acc": 72.5,
+      "valence_f1": 69.92,
+      "arousal_f1": 72.24,
+      "mean_acc": 71.25
+    },
+    "7": {
+      "valence_acc": 75.0,
+      "arousal_acc": 72.5,
+      "valence_f1": 75.0,
+      "arousal_f1": 72.45,
+      "mean_acc": 73.75
+    },
+    "8": {
+      "valence_acc": 75.0,
+      "arousal_acc": 60.0,
+      "valence_f1": 75.06,
+      "arousal_f1": 59.6,
+      "mean_acc": 67.5
+    },
+    "9": {
+      "valence_acc": 82.5,
+      "arousal_acc": 62.5,
+      "valence_f1": 82.49,
+      "arousal_f1": 62.48,
+      "mean_acc": 72.5
+    },
+    "10": {
+      "valence_acc": 85.0,
+      "arousal_acc": 77.5,
+      "valence_f1": 84.96,
+      "arousal_f1": 77.37,
+      "mean_acc": 81.25
+    },
+    "11": {
+      "valence_acc": 80.0,
+      "arousal_acc": 80.0,
+      "valence_f1": 80.0,
+      "arousal_f1": 79.8,
+      "mean_acc": 80.0
+    },
+    "12": {
+      "valence_acc": 90.0,
+      "arousal_acc": 65.0,
+      "valence_f1": 90.0,
+      "arousal_f1": 64.82,
+      "mean_acc": 77.5
+    },
+    "13": {
+      "valence_acc": 72.5,
+      "arousal_acc": 72.5,
+      "valence_f1": 72.06,
+      "arousal_f1": 72.06,
+      "mean_acc": 72.5
+    },
+    "14": {
+      "valence_acc": 92.5,
+      "arousal_acc": 60.0,
+      "valence_f1": 92.5,
+      "arousal_f1": 59.39,
+      "mean_acc": 76.25
+    },
+    "15": {
+      "valence_acc": 95.0,
+      "arousal_acc": 67.5,
+      "valence_f1": 94.99,
+      "arousal_f1": 66.15,
+      "mean_acc": 81.25
+    },
+    "16": {
+      "valence_acc": 50.0,
+      "arousal_acc": 70.0,
+      "valence_f1": 50.0,
+      "arousal_f1": 69.7,
+      "mean_acc": 60.0
+    },
+    "17": {
+      "valence_acc": 80.0,
+      "arousal_acc": 80.0,
+      "valence_f1": 80.0,
+      "arousal_f1": 79.95,
+      "mean_acc": 80.0
+    },
+    "18": {
+      "valence_acc": 87.5,
+      "arousal_acc": 75.0,
+      "valence_f1": 87.43,
+      "arousal_f1": 74.75,
+      "mean_acc": 81.25
+    },
+    "19": {
+      "valence_acc": 85.0,
+      "arousal_acc": 80.0,
+      "valence_f1": 84.77,
+      "arousal_f1": 79.95,
+      "mean_acc": 82.5
+    },
+    "20": {
+      "valence_acc": 92.5,
+      "arousal_acc": 65.0,
+      "valence_f1": 92.5,
+      "arousal_f1": 64.65,
+      "mean_acc": 78.75
+    },
+    "21": {
+      "valence_acc": 72.5,
+      "arousal_acc": 62.5,
+      "valence_f1": 72.48,
+      "arousal_f1": 60.98,
+      "mean_acc": 67.5
+    },
+    "22": {
+      "valence_acc": 77.5,
+      "arousal_acc": 72.5,
+      "valence_f1": 77.49,
+      "arousal_f1": 70.25,
+      "mean_acc": 75.0
+    },
+    "23": {
+      "valence_acc": 75.0,
+      "arousal_acc": 75.0,
+      "valence_f1": 75.0,
+      "arousal_f1": 74.94,
+      "mean_acc": 75.0
+    },
+    "24": {
+      "valence_acc": 82.5,
+      "arousal_acc": 50.0,
+      "valence_f1": 82.49,
+      "arousal_f1": 44.23,
+      "mean_acc": 66.25
+    },
+    "25": {
+      "valence_acc": 72.5,
+      "arousal_acc": 65.0,
+      "valence_f1": 72.45,
+      "arousal_f1": 64.64,
+      "mean_acc": 68.75
+    },
+    "26": {
+      "valence_acc": 75.0,
+      "arousal_acc": 57.5,
+      "valence_f1": 74.94,
+      "arousal_f1": 57.47,
+      "mean_acc": 66.25
+    },
+    "27": {
+      "valence_acc": 70.0,
+      "arousal_acc": 62.5,
+      "valence_f1": 69.7,
+      "arousal_f1": 62.85,
+      "mean_acc": 66.25
+    },
+    "28": {
+      "valence_acc": 77.5,
+      "arousal_acc": 65.0,
+      "valence_f1": 77.37,
+      "arousal_f1": 65.0,
+      "mean_acc": 71.25
+    },
+    "29": {
+      "valence_acc": 85.0,
+      "arousal_acc": 77.5,
+      "valence_f1": 85.0,
+      "arousal_f1": 77.29,
+      "mean_acc": 81.25
+    },
+    "30": {
+      "valence_acc": 75.0,
+      "arousal_acc": 62.5,
+      "valence_f1": 75.0,
+      "arousal_f1": 62.29,
+      "mean_acc": 68.75
+    },
+    "31": {
+      "valence_acc": 85.0,
+      "arousal_acc": 80.0,
+      "valence_f1": 84.96,
+      "arousal_f1": 79.95,
+      "mean_acc": 82.5
+    },
+    "32": {
+      "valence_acc": 87.5,
+      "arousal_acc": 60.0,
+      "valence_f1": 87.49,
+      "arousal_f1": 59.9,
+      "mean_acc": 73.75
+    }
+  },
+  "elapsed_s": 200.1468789577484
+}

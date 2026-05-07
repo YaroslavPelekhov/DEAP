@@ -441,26 +441,32 @@ def train_loso_temporal(
 
     Expected: ~78% Val / ~65% Ar on DEAP (matches v13 notebook).
     """
+    # ── Notebook-matched hyperparameters ──────────────────────────────────────
+    LR_T         = 1e-3    # notebook: 1e-3
+    BATCH_SIZE_T = 16      # notebook: 16 (trial batches)
+    EPOCHS_T     = 100     # notebook: 100
+    PATIENCE_T   = 15      # notebook: 15
+
     subject_ids = sorted(features.keys())
     subject_results = {}
 
     # Infer n_wins from first subject
     d0 = features[subject_ids[0]]
-    n_wins = d0['eeg'].shape[0] // d0['labels'].shape[0]   # 2400 // 40 = 60
+    n_wins = d0['eeg'].shape[0] // d0['labels'].shape[0]   # e.g. 2360 // 40 = 59
 
     for sid in subject_ids:
         train_ids = [s for s in subject_ids if s != sid]
 
         # ── Pool training trials ───────────────────────────────────────────
         tr_e = np.vstack([_reshape_trials(features[s]['eeg'], n_wins)
-                          for s in train_ids])   # (31*40, 60, 192)
+                          for s in train_ids])   # (31*40, n_wins, 192)
         tr_p = np.vstack([_reshape_trials(features[s]['ppg'], n_wins)
                           for s in train_ids])
         tr_g = np.vstack([_reshape_trials(features[s]['gsr'], n_wins)
                           for s in train_ids])
         tr_l = np.vstack([features[s]['labels'] for s in train_ids])   # (1240, 2)
 
-        te_e = _reshape_trials(features[sid]['eeg'], n_wins)   # (40, 60, 192)
+        te_e = _reshape_trials(features[sid]['eeg'], n_wins)   # (40, n_wins, 192)
         te_p = _reshape_trials(features[sid]['ppg'], n_wins)
         te_g = _reshape_trials(features[sid]['gsr'], n_wins)
         te_l = features[sid]['labels']                          # (40, 2)
@@ -476,7 +482,7 @@ def train_loso_temporal(
                           torch.tensor(tr_p, dtype=torch.float32),
                           torch.tensor(tr_g, dtype=torch.float32),
                           torch.tensor(tr_l, dtype=torch.long)),
-            batch_size=32, shuffle=True, drop_last=False,
+            batch_size=BATCH_SIZE_T, shuffle=True, drop_last=False,
         )
         te_ld = DataLoader(
             TensorDataset(torch.tensor(te_e, dtype=torch.float32),
@@ -491,13 +497,14 @@ def train_loso_temporal(
                              in_eeg=tr_e.shape[-1],
                              in_ppg=tr_p.shape[-1],
                              in_gsr=tr_g.shape[-1]).to(device)
-        opt   = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=LR/100)
+        opt   = torch.optim.AdamW(model.parameters(), lr=LR_T, weight_decay=WEIGHT_DECAY)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS_T,
+                                                           eta_min=LR_T / 100)
         crit_val, crit_ar = _class_weights(tr_l, device)
 
         best_acc, best_state, patience_ctr = -1.0, None, 0
 
-        for _ in range(1, EPOCHS + 1):
+        for _ in range(1, EPOCHS_T + 1):
             model.train()
             for e_b, p_b, g_b, l_b in tr_ld:
                 e_b, p_b, g_b, l_b = (x.to(device)
@@ -515,7 +522,7 @@ def train_loso_temporal(
                 best_acc, best_state, patience_ctr = acc, copy.deepcopy(model.state_dict()), 0
             else:
                 patience_ctr += 1
-            if patience_ctr >= PATIENCE:
+            if patience_ctr >= PATIENCE_T:
                 break
 
         model.load_state_dict(best_state)

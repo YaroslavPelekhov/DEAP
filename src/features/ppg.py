@@ -3,7 +3,7 @@ PPG (BVP) feature extraction — HRV features.
 
 Low-level functions (numpy-only)
 ─────────────────────────────────
-  extract_ppg_features(ppg, fs)        – 10 HRV features from one trial
+  extract_ppg_features(ppg, fs)        – 12 HRV+respiratory features from one trial
   extract_ppg_subject(trials, ...)     – all trials, optional window repeat
 
 MNE-aware extractor class
@@ -24,6 +24,7 @@ FEATURE_NAMES = [
     'mean_hr', 'sdnn', 'rmssd', 'pnn50',
     'lf_power', 'hf_power', 'lf_hf_ratio',
     'mean_amp', 'std_amp', 'ibi_cv',
+    'resp_rate_bpm', 'resp_power',          # respiratory component from PPG amplitude
 ]
 N_PPG_FEATURES = len(FEATURE_NAMES)
 
@@ -36,7 +37,7 @@ def _ppg_sos(fs: int = 128) -> np.ndarray:
 
 
 def extract_ppg_features(ppg: np.ndarray, fs: int = 128) -> np.ndarray:
-    """Extract 10 HRV features from a single PPG trial (1-D array)."""
+    """Extract 12 HRV + respiratory features from a single PPG trial (1-D array)."""
     ppg_f = sosfiltfilt(_ppg_sos(fs), ppg)
     p_min, p_max = ppg_f.min(), ppg_f.max()
     if p_max - p_min > 1e-8:
@@ -71,11 +72,24 @@ def extract_ppg_features(ppg: np.ndarray, fs: int = 128) -> np.ndarray:
         hf_power = float(np.log1p(psd[(freqs >= 0.15) & (freqs < 0.40)].sum()))
         lf_hf    = lf_power / (hf_power + 1e-8)
 
-    amps    = ppg_f[peaks]
+    amps = ppg_f[peaks]
+
+    # Respiratory rate from PPG amplitude modulation (raw signal, 0.1–0.5 Hz)
+    resp_freqs, resp_psd = welch(ppg.astype(np.float64), fs=fs,
+                                 nperseg=min(len(ppg), 4 * fs))
+    resp_mask = (resp_freqs >= 0.1) & (resp_freqs <= 0.5)
+    if resp_mask.any():
+        rp = resp_psd[resp_mask]
+        resp_power_val  = float(np.log1p(rp.sum()))
+        resp_rate_val   = float(resp_freqs[resp_mask][rp.argmax()] * 60.0)
+    else:
+        resp_power_val, resp_rate_val = 0.0, 15.0
+
     feats[:] = [mean_hr, sdnn, rmssd, pnn50, lf_power, hf_power, lf_hf,
                 float(amps.mean()),
                 float(amps.std(ddof=1)) if len(amps) > 1 else 0.0,
-                ibi_cv]
+                ibi_cv,
+                resp_rate_val, resp_power_val]
     return feats.astype(np.float32)
 
 

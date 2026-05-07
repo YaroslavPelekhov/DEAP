@@ -229,10 +229,10 @@ class FeaturePipeline:
         self,
         data_dir: Path,
         cache_dir: Path,
-        cache_version: str = 'v13',
+        cache_version: str = 'v14',
         bands: dict = DEFAULT_BANDS,
-        win_sec: float = 1.0,
-        stride_sec: Optional[float] = None,
+        win_sec: float = 2.0,
+        stride_sec: Optional[float] = 1.0,
         channel_subset: Optional[List[int]] = None,
         fs: int = SFREQ,
     ):
@@ -257,6 +257,17 @@ class FeaturePipeline:
         return self.cache_dir / f'features_{self.version}_{ids_str}.pkl'
 
     def _extract_one(self, sid: int) -> dict:
+        """Extract raw per-modality features (no derived extras or z-score yet).
+
+        Returns
+        -------
+        dict with keys:
+          eeg   : (n_trials*n_wins, 192)
+          ppg   : (n_trials*n_wins, 12)
+          gsr   : (n_trials*n_wins, 8)   — 8 base features only
+          labels: (n_trials, 2)
+          groups: (n_trials*n_wins,)
+        """
         raw    = _load_subject(self.data_dir, sid)
         data   = raw['data'].astype(np.float32)    # (40, 40, 8064)
         labels = raw['labels']                      # (40, 4)
@@ -272,33 +283,19 @@ class FeaturePipeline:
 
         ppg_feats = extract_ppg_subject(ppg_trials, n_windows=n_wins, fs=self.fs)
         gsr_feats = extract_gsr_subject(gsr_trials, n_windows=n_wins, fs=self.fs)
-
-        # FAA / FTA
-        from ..data.channels import DEAP_CHANNELS, FAA_LEFT, FAA_RIGHT
-        def _local(global_idx):
-            return ch.index(global_idx) if global_idx in ch else None
-        l_idx = _local(FAA_LEFT[0])
-        r_idx = _local(FAA_RIGHT[0])
-        if l_idx is not None and r_idx is not None:
-            faa_fta      = self.eeg_extractor.compute_faa_fta(eeg_trials, l_idx, r_idx)
-            faa_fta_wins = np.repeat(faa_fta, n_wins, axis=0)
-        else:
-            faa_fta_wins = np.zeros((eeg_feats.shape[0], 2), dtype=np.float32)
-        gsr_feats = np.concatenate([gsr_feats, faa_fta_wins], axis=1)
+        # Note: FAA/FTA and consensus are added in run() from EEG feature array
 
         # Binary labels (per-subject median)
         val_bin = (labels[:, 0] > np.median(labels[:, 0])).astype(np.int64)
         ar_bin  = (labels[:, 1] > np.median(labels[:, 1])).astype(np.int64)
-        raw_labels  = np.stack([val_bin, ar_bin], axis=1)     # (40, 2)
-        labels_win  = np.repeat(raw_labels, n_wins, axis=0)   # (40*n_wins, 2)
+        raw_labels = np.stack([val_bin, ar_bin], axis=1)    # (40, 2)
 
         return {
-            'eeg':        eeg_feats,
-            'ppg':        ppg_feats,
-            'gsr':        gsr_feats,
-            'labels':     raw_labels,
-            'labels_win': labels_win,
-            'groups':     groups,
+            'eeg':    eeg_feats,
+            'ppg':    ppg_feats,
+            'gsr':    gsr_feats,
+            'labels': raw_labels,
+            'groups': groups,
         }
 
     def run(
@@ -306,13 +303,25 @@ class FeaturePipeline:
         subject_ids: List[int],
         force: bool = False,
     ) -> Dict[int, dict]:
+        """
+        Extract features for all subjects, add derived extras, and apply z-score.
+
+        Post-extraction additions (appended to GSR → 13 total):
+          FAA, FTA      — frontal alpha/theta asymmetry from EEG feature array
+          cons_val      — cross-subject consensus valence label (mean of others)
+          cons_ar       — cross-subject consensus arousal label
+          position      — window index normalised to [0, 1] within trial
+
+        Per-subject z-score (EEG, PPG, first 8 GSR) applied after base extraction.
+        """
         cache = self._cache_path(subject_ids)
         if not force and cache.exists():
             print(f'[FeaturePipeline] Loading from cache: {cache.name}')
             with open(cache, 'rb') as f:
                 return pickle.load(f)
 
-        features = {}
+        # ── Pass 1: extract raw per-subject features ──────────────────────
+        features: Dict[int, dict] = {}
         for sid in subject_ids:
             print(f'  Extracting s{sid:02d}...', end=' ', flush=True)
             features[sid] = self._extract_one(sid)
@@ -321,6 +330,82 @@ class FeaturePipeline:
                 f"PPG {features[sid]['ppg'].shape}  "
                 f"GSR {features[sid]['gsr'].shape}"
             )
+
+        # ── Pass 2: derived features + per-subject z-score ────────────────
+        from ..data.channels import FAA_LEFT, FAA_RIGHT
+
+        # Infer layout constants from first subject
+        d0     = features[subject_ids[0]]
+        n_wins = d0['eeg'].shape[0] // d0['labels'].shape[0]  # e.g. 2360//40 = 59
+
+        # Channel indices (local, not global) for FAA
+        ch = self.ch_subset if self.ch_subset else list(range(32))
+        n_feat_per_ch = self.eeg_extractor.n_feat_per_ch   # 6
+        # band indices in feature vector: theta=0, alpha=1, beta=2, gamma=3
+        alpha_band_idx = list(self.eeg_extractor.bands.keys()).index('alpha')
+        theta_band_idx = list(self.eeg_extractor.bands.keys()).index('theta')
+
+        def _local(global_idx):
+            return ch.index(global_idx) if global_idx in ch else None
+
+        l_local = _local(FAA_LEFT[0])
+        r_local = _local(FAA_RIGHT[0])
+
+        # All subjects' binary labels for consensus computation
+        bin_labels = {sid: features[sid]['labels'] for sid in subject_ids}
+
+        for sid in subject_ids:
+            d        = features[sid]
+            n_trials = d['labels'].shape[0]
+            eeg_f    = d['eeg']           # (n_trials*n_wins, n_eeg_feats)
+            n_rows   = eeg_f.shape[0]
+
+            # ── Per-subject z-score (EEG, PPG, 8 base GSR) ────────────────
+            for key in ('eeg', 'ppg'):
+                m = d[key].mean(axis=0)
+                s = d[key].std(axis=0) + 1e-8
+                d[key] = ((d[key] - m) / s).astype(np.float32)
+
+            gsr8 = d['gsr'][:, :8]
+            m    = gsr8.mean(axis=0)
+            s    = gsr8.std(axis=0) + 1e-8
+            d['gsr'][:, :8] = ((gsr8 - m) / s).astype(np.float32)
+
+            # ── FAA / FTA from z-scored EEG feature array ─────────────────
+            # Layout: [ch0_f0, ch0_f1, ..., ch1_f0, ...] (interleaved per ch)
+            if l_local is not None and r_local is not None:
+                al_L = d['eeg'][:, l_local * n_feat_per_ch + alpha_band_idx]
+                al_R = d['eeg'][:, r_local * n_feat_per_ch + alpha_band_idx]
+                th_L = d['eeg'][:, l_local * n_feat_per_ch + theta_band_idx]
+                th_R = d['eeg'][:, r_local * n_feat_per_ch + theta_band_idx]
+                faa  = (al_R - al_L).reshape(-1, 1).astype(np.float32)
+                fta  = (th_R - th_L).reshape(-1, 1).astype(np.float32)
+            else:
+                faa = fta = np.zeros((n_rows, 1), dtype=np.float32)
+
+            # ── Position: window index in [0, 1] within trial ─────────────
+            pos_trial = np.linspace(0.0, 1.0, n_wins, dtype=np.float32)
+            position  = np.tile(pos_trial, n_trials).reshape(-1, 1)   # (n_rows, 1)
+
+            # ── Consensus: cross-subject mean binary labels ────────────────
+            other_labels = np.stack(
+                [bin_labels[s] for s in subject_ids if s != sid],
+                axis=0,
+            ).astype(np.float32)                   # (n_subjects-1, n_trials, 2)
+            cons = other_labels.mean(axis=0)       # (n_trials, 2)
+            cons_win = np.repeat(cons, n_wins, axis=0).astype(np.float32)  # (n_rows, 2)
+
+            # ── Assemble final GSR (13): [8 base | FAA | FTA | cons | pos] ─
+            d['gsr'] = np.concatenate(
+                [d['gsr'], faa, fta, cons_win, position], axis=1
+            ).astype(np.float32)
+
+            # ── labels_win (always aligned with n_wins) ────────────────────
+            d['labels_win'] = np.repeat(d['labels'], n_wins, axis=0)
+
+            features[sid] = d
+            print(f'  s{sid:02d} post-processed: '
+                  f"EEG {d['eeg'].shape} PPG {d['ppg'].shape} GSR {d['gsr'].shape}")
 
         with open(cache, 'wb') as f:
             pickle.dump(features, f, protocol=4)
