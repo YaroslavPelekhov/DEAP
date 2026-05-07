@@ -26,10 +26,10 @@ jobs:
       - name: Check imports
         run: |
           python -c "
-          from src.features.eeg import extract_eeg_features
-          from src.features.ppg import extract_ppg_features
-          from src.features.gsr import extract_gsr_features
-          from src.features.pipeline import FeaturePipeline
+          from src.features.eeg import DEHjorthExtractor, FAAExtractor
+          from src.features.ppg import HRVExtractor
+          from src.features.gsr import EDAExtractor
+          from src.features.pipeline import FeaturePipeline, MNEFeaturePipeline
           from src.models.temporal import TemporalNet
           from src.models.multimodal import MultiModalNet
           from src.training.trainer import train_loso_temporal
